@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Pro Full Sheet</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; padding: 12px; margin: 0; background: #f8f9fa; color: #202124; }
+    .header { border-bottom: 2px solid #1a73e8; padding-bottom: 6px; margin-bottom: 10px; }
+    .header h3 { margin: 0; color: #1a73e8; font-size: 15px; }
+    .badge { background: #e8f0fe; color: #1967d2; padding: 3px 6px; border-radius: 4px; font-size: 11px; display: inline-block; margin-top: 4px; }
+    .box { background: #fff; padding: 8px; border-radius: 6px; border: 1px solid #dadce0; margin-bottom: 8px; }
+    label { font-size: 11px; font-weight: bold; color: #5f6368; display: block; margin-bottom: 3px; }
+    input[type="password"] { width: 100%; box-sizing: border-box; padding: 6px; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; }
+    textarea { width: 100%; height: 65px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; padding: 6px; font-size: 12px; resize: vertical; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 8px 0; }
+    button { padding: 7px; border-radius: 5px; border: none; cursor: pointer; font-size: 11px; font-weight: bold; }
+    .btn-main { background: #1a73e8; color: white; grid-column: span 2; padding: 9px; }
+    .btn-main:hover { background: #1557b0; }
+    .btn-tool { background: #e8f0fe; color: #1967d2; border: 1px solid #d2e3fc; }
+    .btn-tool:hover { background: #d2e3fc; }
+    .btn-write { background: #34a853; color: white; width: 100%; margin-top: 6px; padding: 8px; }
+    .btn-write:hover { background: #2d9247; }
+    #output { background: #ffffff; padding: 10px; border-radius: 5px; border: 1px solid #dadce0; min-height: 120px; max-height: 220px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; line-height: 1.5; }
+    .status { font-size: 11px; color: #70757a; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h3>مساعد Gemini Pro الشامل</h3>
+    <span class="badge">وضع: قراءة كامل بيانات الشيت تلقائياً</span>
+  </div>
+
+  <div class="box">
+    <label>مفتاح Gemini API Key:</label>
+    <input type="password" id="apiKey" placeholder="الصق المفتاح هنا..." onchange="saveKey()">
+  </div>
+
+  <textarea id="userPrompt" placeholder="اكتب سؤالك أو اترك فارغاً واختر زراً سريعاً..."></textarea>
+
+  <div class="actions">
+    <button class="btn-main" onclick="processSheet('custom')">تنفيذ الطلب على كامل الشيت</button>
+    <button class="btn-tool" onclick="processSheet('audit')">فحص وتدقيق كامل الملف</button>
+    <button class="btn-tool" onclick="processSheet('summary')">ملخص إحصائي شامل</button>
+    <button class="btn-tool" onclick="processSheet('clean_plan')">اقتراح تنظيف البيانات</button>
+    <button class="btn-tool" onclick="processSheet('formulas')">اقتراح معادلات للشيت</button>
+  </div>
+
+  <div id="output">الرد سيظهر هنا...</div>
+  <button class="btn-write" onclick="insertAtFirstEmptyRow()">كتابة التقرير في أول سطر فارغ أسفل الجدول</button>
+  <div id="status" class="status"></div>
+
+  <script>
+    let officeReady = false;
+
+    Office.onReady((info) => {
+      if (info.host === Office.HostType.Excel) {
+        officeReady = true;
+      }
+      const saved = localStorage.getItem("gemini_key_full");
+      if (saved) document.getElementById("apiKey").value = saved;
+    });
+
+    function saveKey() {
+      localStorage.setItem("gemini_key_full", document.getElementById("apiKey").value.trim());
+      document.getElementById("status").innerText = "تم حفظ مفتاح API محلياً.";
+    }
+
+    async function getSheetDetails(context) {
+      const sheet = context.workbook.worksheets.getActiveWorksheet();
+      const usedRange = sheet.getUsedRange();
+      usedRange.load(["values", "address", "rowCount", "columnCount", "rowIndex"]);
+      await context.sync();
+
+      const nextEmptyRowIndex = usedRange.rowIndex + usedRange.rowCount;
+      return {
+        address: usedRange.address,
+        values: usedRange.values,
+        rows: usedRange.rowCount,
+        cols: usedRange.columnCount,
+        nextRow: nextEmptyRowIndex
+      };
+    }
+
+    async function processSheet(actionType) {
+      const apiKey = document.getElementById("apiKey").value.trim();
+      if (!apiKey) {
+        alert("يرجى إدخال مفتاح Gemini API أولاً.");
+        return;
+      }
+
+      const out = document.getElementById("output");
+      out.innerText = "جاري قراءة كامل النطاق المستخدم في الشيت...";
+      document.getElementById("status").innerText = "جاري الفحص...";
+
+      try {
+        let sheetData = null;
+
+        if (officeReady) {
+          await Excel.run(async (context) => {
+            sheetData = await getSheetDetails(context);
+          });
+        }
+
+        if (!sheetData || !sheetData.values || sheetData.values.length === 0) {
+          out.innerText = "ورقة العمل الحالية فارغة تماماً.";
+          return;
+        }
+
+        out.innerText = `تم فحص النطاق (${sheetData.address}). إرسال البيانات إلى Gemini...`;
+
+        let promptText = document.getElementById("userPrompt").value.trim();
+        let instruction = "";
+
+        if (actionType === 'audit') {
+          instruction = "أنت مدقق بيانات محترف. قم بفحص كامل هذا الجدول: ابحث عن أي أخطاء حسابية، خلايا ناقصة، تكرار في الأسماء أو الهواتف، وأعطني تقريراً واضحاً بالملاحظات:";
+        } else if (actionType === 'summary') {
+          instruction = "قم بعمل تحليل شامل وموجز لأرقام وإحصائيات هذا الملف بالكامل:";
+        } else if (actionType === 'clean_plan') {
+          instruction = "حلل أعمدة الجدول التالية، واقترح خطوات عملية لتنظيف البيانات وإزالة الفراغات والازدواجية:";
+        } else if (actionType === 'formulas') {
+          instruction = "بناءً على أعمدة وبيانات هذا الشيت، اقترح أفضل معادلات إكسيل (Excel Formulas) التي تفيد في حساب المجاميع والنسب والمطابقات:";
+        } else {
+          instruction = promptText || "حلل هذا الملف واشرح أهم ما فيه:";
+        }
+
+        const fullPayload = `${instruction}\n\n[معلومات الشيت]: النطاق المستخدم: ${sheetData.address} (${sheetData.rows} صف × ${sheetData.cols} عمود).\n[البيانات الكاملة للملف بتنسيق مصفوفة]:\n${JSON.stringify(sheetData.values)}`;
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: fullPayload }] }]
+          })
+        });
+
+        const resData = await response.json();
+        if (resData.error) {
+          out.innerText = "خطأ من سيرفر Gemini: " + resData.error.message;
+        } else {
+          const reply = resData.candidates?.[0]?.content?.parts?.[0]?.text || "لا يوجد رد.";
+          out.innerText = reply;
+          document.getElementById("status").innerText = "تمت العملية بنجاح.";
+        }
+      } catch (err) {
+        out.innerText = "حدث خطأ: " + err.message;
+      }
+    }
+
+    async function insertAtFirstEmptyRow() {
+      const text = document.getElementById("output").innerText;
+      if (!text || text.startsWith("جاري") || text.startsWith("خطأ")) return;
+
+      await Excel.run(async (context) => {
+        const sheet = context.workbook.worksheets.getActiveWorksheet();
+        const usedRange = sheet.getUsedRange();
+        usedRange.load(["rowIndex", "rowCount"]);
+        await context.sync();
+
+        const targetRow = usedRange.rowIndex + usedRange.rowCount + 1;
+        const targetCell = sheet.getCell(targetRow, 0);
+        
+        targetCell.values = [[text]];
+        targetCell.select();
+        await context.sync();
+        document.getElementById("status").innerText = `تمت الكتابة في السطر الفارغ رقم (${targetRow + 1}).`;
+      });
+    }
+  </script>
+</body>
+</html>
